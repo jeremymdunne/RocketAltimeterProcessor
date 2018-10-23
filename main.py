@@ -5,7 +5,6 @@ from tkinter import *
 import math
 import matplotlib
 import numpy as np
-from Graph import Graph
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 # implement the default mpl key bindings
 from matplotlib.figure import Figure
