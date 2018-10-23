@@ -80,6 +80,40 @@ class AltimeterViewer:
                 else:
                     lastEnd = len(line)
 
+    def determineLaunchTime(self):
+        #determine launch time from both a height change and a velocity change
+        #look for a delta h of ~2 m over the course of ~1 sec
+        startIndex = 0;
+        accumulator = 0
+        #find the time step for ~ 1 sec
+        while startIndex == 0:
+            accumulator += 1
+            if self.kalmanTime[accumulator] - self.kalmanTime[0] >= 1:
+                startIndex = accumulator
+        print(startIndex)
+        for i in range(2*startIndex,len(self.kalmanTime)-int(startIndex/2)-1):
+            #find the average height up to 1 second before this time slot
+            averageHeight = self.kalmanAlt[0]
+            for q in range(1,i-startIndex):
+                averageHeight += self.kalmanAlt[q]
+            averageHeight /= (i-startIndex)
+            #print(averageHeight)
+            #compare delta h
+            if self.kalmanAlt[i] - averageHeight > .5:
+                #compute average velocity
+                averageVel = 0
+                #print("Suspected launch time: " + str(self.kalmanTime[i]))
+                for p in range(i-int(startIndex/2),i+int(startIndex/2)):
+                    averageVel += self.kalmanVel[p]
+                averageVel /= startIndex
+                if(averageVel > 2):
+                    print("Suspected Launch time:" + str(self.kalmanTime[i]))
+                    #work our way back to determine the exact moment of launch
+                    for t in range(1,i):
+                        if self.kalmanAlt[i-t] > self.kalmanAlt[i-t+1]:
+                            self.launchTimeIndex = i-t+1
+                            return
+
     #handles data smoothing/filters
     def filterData(self):
         #apply a kalman filter on the altitude data to smooth it
@@ -117,6 +151,7 @@ class AltimeterViewer:
             self.kalmanAccel.append(self.accelFilter.filter(self.accelData[i]))
             self.kalmanAccelTime.append(self.accelTime[i])
             #print(self.p)
+        print(len(self.kalmanAccelTime))
 
     def openLogFile(self):
         self.logFilename =  filedialog.askopenfilename(initialdir = "C:/",title = "Select file",filetypes = (("text files" ,"*.txt"),("all files","*.*")))
@@ -136,8 +171,11 @@ class AltimeterViewer:
         self.updateOptionsButton = Button(self.fileManagementFrame,text="Update Graphs",command=self.updateGraphs)
         self.updateOptionsButton.grid(row=len(self.options)+1,column=0)
         self.fileOpenButton.grid(row=len(self.options)+2,column=0,sticky=S)
+
         self.filterData()
+        self.determineLaunchTime()
         self.plotGraphs()
+
 
     def updateGraphs(self):
         self.showRawAlt = self.optionStates[0].get()
@@ -148,13 +186,18 @@ class AltimeterViewer:
         self.showKalmanAccel = self.optionStates[5].get()
         self.plotGraphs()
 
-
-
     def plotGraphs(self):
         #clear all
         self.altitudeSubGraph.clear()
         self.velSubGraph.clear()
         self.accelSubGraph.clear()
+
+        self.altitudeSubGraph.annotate('Launch Time\nT:'+str(self.kalmanTime[self.launchTimeIndex]),
+            xy=(self.kalmanTime[self.launchTimeIndex], self.kalmanAlt[self.launchTimeIndex]), xycoords='data',
+            xytext=(0.05, 0.1), textcoords='axes fraction',
+            arrowprops=dict(facecolor='black'),
+            horizontalalignment='left', verticalalignment='top')
+
         #check if they should by plotted
         if self.showRawAlt:
             self.altitudeSubGraph.plot(self.timeData,self.altData, label='Raw Alt',color='r')
@@ -173,7 +216,6 @@ class AltimeterViewer:
         self.accelSubGraph.legend(loc='upper left')
         self.graphCanvas.draw()
         self.graphToolbar.update()
-        print(len(self.kalmanAccelTime))
         #print("Opening log!");
 
     def parseMessageForSubstring(slef, message, indicator, deliminator,lineStart=0):
