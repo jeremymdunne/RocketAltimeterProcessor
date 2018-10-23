@@ -50,7 +50,12 @@ class AltimeterViewer:
         self.accelTime = []
         self.kalmanAccel = []
         self.kalmanAccelTime = []
-
+        self.showRawAlt = True
+        self.showKalmanAlt = True
+        self.showRawVel = True
+        self.showKalmanVel = True
+        self.showRawAccel = True
+        self.showKalmanAccel = True
     #opens the log file and parses raw altitude data from it
     def openAndParseFile(self, fileName):
         logFile = open(fileName)
@@ -116,17 +121,53 @@ class AltimeterViewer:
     def openLogFile(self):
         self.logFilename =  filedialog.askopenfilename(initialdir = "C:/",title = "Select file",filetypes = (("text files" ,"*.txt"),("all files","*.*")))
         self.openAndParseFile(self.logFilename)
+        #change the buttons
+        #add a checkbox fore what to display
+        self.options = ['Altitude','Filtered Altitude','Velocity','Filtered Velocity', 'Acceleration', 'Filtered Acceleration']
+        self.checkBoxes = []
+        self.optionStates = []
+        for i in range(0,len(self.options)):
+            self.optionStates.append(BooleanVar())
+            self.graphOptions = Checkbutton(self.fileManagementFrame,variable=self.optionStates[i],text=self.options[i],onvalue=True,offvalue=False)
+            self.graphOptions.select()
+            self.checkBoxes.append(self.graphOptions)
+            self.checkBoxes[i].grid(row=i,column=0,sticky=W)
         #self.orientationGraph.regraph()
+        self.updateOptionsButton = Button(self.fileManagementFrame,text="Update Graphs",command=self.updateGraphs)
+        self.updateOptionsButton.grid(row=len(self.options)+1,column=0)
+        self.fileOpenButton.grid(row=len(self.options)+2,column=0,sticky=S)
         self.filterData()
         self.plotGraphs()
 
+    def updateGraphs(self):
+        self.showRawAlt = self.optionStates[0].get()
+        self.showKalmanAlt = self.optionStates[1].get()
+        self.showRawVel = self.optionStates[2].get()
+        self.showKalmanVel = self.optionStates[3].get()
+        self.showRawAccel = self.optionStates[4].get()
+        self.showKalmanAccel = self.optionStates[5].get()
+        self.plotGraphs()
+
+
+
     def plotGraphs(self):
-        self.altitudeSubGraph.plot(self.timeData,self.altData, label='Raw Alt')
-        self.altitudeSubGraph.plot(self.kalmanTime,self.kalmanAlt, label='Kalman Alt 1')
-        self.velSubGraph.plot(self.velTime,self.velData, color='y', label='Velocity')
-        self.velSubGraph.plot(self.kalmanVelTime, self.kalmanVel, color='black', label='Kalman Velocity')
-        self.accelSubGraph.plot(self.accelTime, self.accelData, label='Raw Accel')
-        self.accelSubGraph.plot(self.kalmanAccelTime, self.kalmanAccel, label='Kalman Accel')
+        #clear all
+        self.altitudeSubGraph.clear()
+        self.velSubGraph.clear()
+        self.accelSubGraph.clear()
+        #check if they should by plotted
+        if self.showRawAlt:
+            self.altitudeSubGraph.plot(self.timeData,self.altData, label='Raw Alt',color='r')
+        if self.showKalmanAlt:
+            self.altitudeSubGraph.plot(self.kalmanTime,self.kalmanAlt, label='Kalman Alt 1',color='b')
+        if self.showRawVel:
+            self.velSubGraph.plot(self.velTime,self.velData, color='y', label='Velocity')
+        if self.showKalmanVel:
+            self.velSubGraph.plot(self.kalmanVelTime, self.kalmanVel, color='black', label='Kalman Velocity')
+        if self.showRawAccel:
+            self.accelSubGraph.plot(self.accelTime, self.accelData, label='Raw Accel',color='r')
+        if self.showKalmanAccel:
+            self.accelSubGraph.plot(self.kalmanAccelTime, self.kalmanAccel, label='Kalman Accel',color='b')
         self.altitudeSubGraph.legend(loc='upper left')
         self.velSubGraph.legend(loc='upper right')
         self.accelSubGraph.legend(loc='upper left')
