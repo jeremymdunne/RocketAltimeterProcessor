@@ -8,47 +8,57 @@ import numpy as np
 from Graph import Graph
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 # implement the default mpl key bindings
-from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
 from tkinter import filedialog
 matplotlib.use('TkAgg')
 
-
-class MainGui:
+#AltimeterViewer handles showing the data from the log files and running all data smothing and other algorithms
+class AltimeterViewer:
     def __init__(self, master):
-        print("init")
+        #set up main screen with a master frame with the graphing canvas and side buttons/options
         master.columnconfigure(0,weight=4)
         master.columnconfigure(0,weight=1)
         master.rowconfigure(0,weight=1)
-        self.timeData = []
-        self.altData = []
-        self.orientationGraphFrame = Frame(master)
-        #self.orientationGraph = Graph(self.orientationGraphFrame,yTag="Altitude(meters)",numAxis=3, colors = ['red','blue','green'], autoScaleY = True)
+        self.masterGraphFrame = Frame(master)
         self.graphingFigure = Figure(figsize=(5,5), dpi=100)
+        #create the different subplots, both position and velocity share the same graph, acceleration on another
         self.altitudeSubGraph = self.graphingFigure.add_subplot(121)
         self.velSubGraph = self.altitudeSubGraph.twinx()
         self.accelSubGraph = self.graphingFigure.add_subplot(122)
-        #self.smoothedSubGraph = self.graphingFigure.add_subplot(111,axisbg='r')
-        #a.plot([1,2,3,4,5,6,7,8],[5,6,1,3,8,9,3,5])
-        self.graphCanvas = FigureCanvasTkAgg(self.graphingFigure, self.orientationGraphFrame)
+        #graph configuration stuffs
+        self.graphCanvas = FigureCanvasTkAgg(self.graphingFigure, self.masterGraphFrame)
         self.graphCanvas.draw()
         self.graphCanvas.get_tk_widget().pack(side=BOTTOM, fill=BOTH, expand=True)
-
-        self.graphToolbar = NavigationToolbar2Tk(self.graphCanvas, self.orientationGraphFrame)
+        self.graphToolbar = NavigationToolbar2Tk(self.graphCanvas, self.masterGraphFrame)
         self.graphToolbar.update()
         self.graphCanvas._tkcanvas.pack(side=TOP, fill=BOTH, expand=True)
-
-        self.orientationGraphFrame.grid(row=0, column=0,padx = 5,pady = 5,sticky=N+W+E+S)
+        self.masterGraphFrame.grid(row=0, column=0,padx = 5,pady = 5,sticky=N+W+E+S)
+        #create the options frame
         self.fileManagementFrame = Frame(master)
-        #add buttons
+        #add buttons on the right
         self.fileOpenButton = Button(self.fileManagementFrame, text="Open Altitude Log", command = self.openLogFile)
         self.fileOpenButton.grid(row=0,column=0)
         self.fileManagementFrame.grid(row=0,column=1,padx = 5)
+        #data initialization
+        #raw data
+        self.timeData = []
+        self.altData = []
+        #derived data
+        self.kalmanAlt = []
+        self.kalmanTime = []
+        self.kalmanVel = []
+        self.kalmanVelTime = []
+        self.velData = []
+        self.velTime = []
+        self.accelData = []
+        self.accelTime = []
+        self.kalmanAccel = []
+        self.kalmanAccelTime = []
 
-    def openLogFile(self):
-        self.logFilename =  filedialog.askopenfilename(initialdir = "C:/",title = "Select file",filetypes = (("text files" ,"*.txt"),("all files","*.*")))
-        self.logFile = open(self.logFilename)
-        for line in self.logFile:
+    #opens the log file and parses raw altitude data from it
+    def openAndParseFile(self, fileName):
+        logFile = open(fileName)
+        for line in logFile:
             #print(line)
             lastEnd = 0
             while lastEnd < len(line):
@@ -68,31 +78,16 @@ class MainGui:
                     lastEnd = start + 1
                 else:
                     lastEnd = len(line)
-        #self.orientationGraph.regraph()
-        #lets do some perliminary altitude smoothing!
-        #first do an average of n points
-        self.newAltData = []
-        self.newTimeData = []
-        for i in range(50,len(self.altData)):
-            runningAvg = 0
-            runningDelta = 0
-            for p in range(0,50):
-                runningAvg += self.altData[i-p]
-            runningAvg /=50
-            self.newAltData.append(runningAvg)
-            self.newTimeData.append(self.timeData[i])
 
-        self.kalmanAlt = []
-        self.kalmanTime = []
+    #handles data smoothing/filters
+    def filterData(self):
+        #apply a kalman filter on the altitude data to smooth it
         self.altFilter = KalmanFilter(self.altData[0],1000,.001,.02,0)
         for i in range(1,len(self.altData)):
             self.kalmanAlt.append(self.altFilter.filter(self.altData[i]))
             self.kalmanTime.append(self.timeData[i])
             #print(self.p)
-
-        self.velData = []
-        self.velTime = []
-        #find velocity
+        #find velocity by taking the d/dt of the filtered altitude data
         for i in range(1,len(self.kalmanAlt)):
             runningDelta = 0
             #for p in range(1,1):
@@ -101,18 +96,12 @@ class MainGui:
             runningDelta/=(self.timeData[i]-self.timeData[i-1])
             self.velData.append(runningDelta)
             self.velTime.append(self.kalmanTime[i])
-
-        self.kalmanVel = []
-        self.kalmanVelTime = []
+        #apply a kalman filter on the velocity data to smooth the results
         self.velFilter = KalmanFilter(self.velData[0],1000,.01,.06,0)
         for i in range(1,len(self.velData)):
             self.kalmanVel.append(self.velFilter.filter(self.velData[i]))
             self.kalmanVelTime.append(self.velTime[i])
-            #print(self.p)
-
-        self.accelData = []
-        self.accelTime = []
-        #find velocity
+        #find acceleration by taking the da/dt from the filtered altitude data
         for i in range(1,len(self.kalmanVel)):
             runningDelta = 0
             #for p in range(1,1):
@@ -121,19 +110,22 @@ class MainGui:
             runningDelta/=(self.kalmanVelTime[i]-self.kalmanVelTime[i-1])
             self.accelData.append(runningDelta)
             self.accelTime.append(self.kalmanVelTime[i])
-
-        self.kalmanAccel = []
-        self.kalmanAccelTime = []
+        #apply a kalman filter on the raw acceleration data to smooth the data
         self.accelFilter = KalmanFilter(self.accelData[0],1000,.01,.06,0)
         for i in range(1,len(self.accelData)):
             self.kalmanAccel.append(self.accelFilter.filter(self.accelData[i]))
             self.kalmanAccelTime.append(self.accelTime[i])
             #print(self.p)
 
+    def openLogFile(self):
+        self.logFilename =  filedialog.askopenfilename(initialdir = "C:/",title = "Select file",filetypes = (("text files" ,"*.txt"),("all files","*.*")))
+        self.openAndParseFile(self.logFilename)
+        #self.orientationGraph.regraph()
+        self.filterData()
+        self.plotGraphs()
 
-        #self.smoothedSubGraph.plot()
+    def plotGraphs(self):
         self.altitudeSubGraph.plot(self.timeData,self.altData, label='Raw Alt')
-        #self.altitudeSubGraph.plot(self.newTimeData,self.newAltData, label='Filtered Alt')
         self.altitudeSubGraph.plot(self.kalmanTime,self.kalmanAlt, label='Kalman Alt 1')
         self.velSubGraph.plot(self.velTime,self.velData, color='y', label='Velocity')
         self.velSubGraph.plot(self.kalmanVelTime, self.kalmanVel, color='black', label='Kalman Velocity')
@@ -152,57 +144,7 @@ class MainGui:
         end = message.index(deliminator, start)
         return message[start:end]
 
-    def handleOrientationMessage(self, message):
-
-        xOrientation = float(parseMessageForSubstring(message, "X:", ";"))
-        yOrientation = float(parseMessageForSubstring(message, "Y:", ";"))
-        zOrientation = float(parseMessageForSubstring(message, "Z:", ";"))
-        time = float(parseMessageForSubstring(message, "TS:", ";"))
-        self.orientationGraph.addPoint([time,xOrientation],0, graphNow = False)
-        self.orientationGraph.addPoint([time,yOrientation],1, graphNow = True)
-        #self.orientationGraph.addPoint([time,zOrientation],2, graphNow = True)
-
-
-    def handleCommunication(self):
-        #self.handleOrientationMessage("@O:X:1.5;Y:-2.3;Z:5.5;TS:0.0;")
-        #self.handleOrientationMessage("@O:X:2.5;Y:-2.5;Z:4.5;TS:1.0;")
-        #self.handleOrientationMessage("@O:X:1.5;Y:-2.3;Z:5.5;TS:2.0;")
-        #self.handleOrientationMessage("@O:X:1.5;Y:-2.3;Z:6.5;TS:3.0;")
-        while(self.serialMonitor.checkForOpenComms() == False):
-            pass
-        #attempt open
-        self.portOptions = self.serialMonitor.getRequestedComms()
-        try:
-            self.serial = ArduinoCommunicator(self.portOptions)
-        except Exception as e:
-            print(e)
-            print("Failed to Open")
-            self.serialMonitor.showMessageFromTarget("Failed To Open Port")
-            #try again
-            self.handleCommunication()
-        print("Opened Serial!")
-        # start the main communication loop
-        while True:
-            while(self.serial.isOpen() == True):
-
-                if(self.serial.available()):
-                    #read it
-                    try:
-                        message = self.serial.read()
-                        #print("New Message:" + message)
-                        #parse it here
-                        if "@O" in message:
-                            self.handleOrientationMessage(message)
-                        elif "@P" in message:
-                            self.handlePowerMessage(message)
-                        self.serialMonitor.showMessageFromTarget(message)
-                    except:
-                        print("error")
-                if(self.serialMonitor.checkForNewMessage() == True):
-                    message = self.serialMonitor.getMessage()
-                    #send to the target
-                    self.serial.write(message)
-
+#simple kalman filter for one data set
 class KalmanFilter:
     def __init__(self, x, p, q, r, k):
         self.p = p;
@@ -220,10 +162,8 @@ class KalmanFilter:
 def main():
     root = Tk()
     root.title("Rocket Altimeter Visualizer")
-    gui = MainGui(root)
+    gui = AltimeterViewer(root)
     root.mainloop()
-
-
 
 
 
