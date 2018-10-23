@@ -1,6 +1,3 @@
-import serial
-import sys
-import _thread
 from tkinter import *
 import math
 import matplotlib
